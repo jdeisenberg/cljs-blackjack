@@ -15,7 +15,7 @@
                      :current-bet 10
                      :playing false
                      :player-feedback ""
-                     :dealer-feedback ""}))
+                     :feedback-color :black}))
 
 (defn deal
   "Deal one card from the deck to a hand in the given
@@ -89,9 +89,9 @@
     (swap! game assoc :player-money new-money :current-bet (max 0 (min current-bet new-money)))))
 
 (defn feedback
-  "Given feedback for the dealer and player, update the reactive fields."
-  [dealer player]
-  (swap! game assoc :dealer-feedback dealer :player-feedback player))
+  "Given feedback for the player; update the reactive field."
+  [message color]
+  (swap! game assoc :player-feedback (str "\u00a0" message) :feedback-color (name color)))
 
 (defn end-game
   "Evaluate the dealer's and player's hands when the
@@ -102,14 +102,14 @@
 ;;    (println "Player:" player ptotal pstatus)
 ;;    (println "Dealer:" dealer dtotal dstatus)
     (cond
-      (> ptotal 21) (feedback "Dealer wins." "Sorry, you busted.")
-      (> dtotal 21) (feedback "Dealer goes bust." "You win!")
-      (= ptotal dtotal) (feedback "" "Tie.")
-      (= pstatus :blackjack) (feedback "" "You win with blackjack!")
-      (= dstatus :blackjack) (feedback "Dealer has blackjack." "")
-      (< ptotal dtotal) (feedback "Dealer wins." "")
-      (> ptotal dtotal) (feedback "" "You win!")
-      :else (feedback "" "Unknown result (Shouldn't happen.)"))
+      (> ptotal 21) (feedback "Sorry, you busted." :red)
+      (> dtotal 21) (feedback "Dealer goes bust. You win!" :green)
+      (= ptotal dtotal) (feedback "Tie game." :black)
+      (= pstatus :blackjack) (feedback "You win with blackjack!" :green)
+      (= dstatus :blackjack) (feedback "Dealer has blackjack." :red)
+      (< ptotal dtotal) (feedback "Dealer wins." :red)
+      (> ptotal dtotal) (feedback "You win!" :green)
+      :else (feedback "Unknown result (Shouldn't happen.)" :gray))
     (update-money dtotal dstatus ptotal pstatus)
     (swap! game assoc :playing false)))
 
@@ -120,15 +120,15 @@
   [event]
   (let [{:keys [deck discard-pile dealer-hand player-hand current-bet]} @game
         [player1 disc0] (discard [player-hand discard-pile])
-        [dealer1 disc1] (discard [dealer-hand disc0])]
-    (let [[deck2 dealer2 disc2] (deal (deal [deck dealer1 disc1] :up) :down)
-          [deck3 player2 disc3] (deal (deal [deck2 player1 disc2] :up) :up)]
-      (swap! game assoc :playing true :discard-pile disc3 :player-hand player2
-             :dealer-hand dealer2 :deck deck3 :dealer-feedback "" :player-feedback "")
-      (if (immediate-win dealer2 player2)
-        (do
-          (swap! game assoc :dealer-hand (reveal dealer2))
-          (end-game dealer2 player2))))))
+        [dealer1 disc1] (discard [dealer-hand disc0])
+        [deck2 dealer2 disc2] (deal (deal [deck dealer1 disc1] :up) :down)
+        [deck3 player2 disc3] (deal (deal [deck2 player1 disc2] :up) :up)]
+    (swap! game assoc :playing true :discard-pile disc3 :player-hand player2
+           :dealer-hand dealer2 :deck deck3 :player-feedback "" :feedback-color :black)
+    (if (immediate-win dealer2 player2)
+      (do
+        (swap! game assoc :dealer-hand (reveal dealer2))
+        (end-game dealer2 player2)))))
 
 (defn hit-me
   "Deal a card face up to the player, and evaluate the hand.
@@ -210,13 +210,13 @@
 (defn tableau
   "Display the playing area (the tableau)."
   []
-  (let [{:keys [dealer-hand player-hand playing dealer-feedback player-feedback
+  (let [{:keys [dealer-hand player-hand playing player-feedback feedback-color
                 player-money current-bet]} @game]
   [:div
-   [:h2 "Dealer’s Cards " [:span {:class "dealerFeedback"} dealer-feedback]]
+   [:h2 "Dealer’s Cards"]
    [show-cards dealer-hand]
    [:hr]
-   [:h2 "Your Cards " [:span {:class "playerFeedback"} player-feedback]]
+   [:h2 "Your Cards" [:span {:style {:color feedback-color}} player-feedback]]
    [show-cards player-hand]
    [:p
     [:input {:type "button"
