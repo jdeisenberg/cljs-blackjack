@@ -121,7 +121,7 @@
   (let [{:keys [deck discard-pile dealer-hand player-hand current-bet]} @game
         [player1 disc0] (discard [player-hand discard-pile])
         [dealer1 disc1] (discard [dealer-hand disc0])]
-    (let [[deck2 dealer2 disc2] (deal (deal [deck dealer1 disc1] :down) :up)
+    (let [[deck2 dealer2 disc2] (deal (deal [deck dealer1 disc1] :up) :down)
           [deck3 player2 disc3] (deal (deal [deck2 player1 disc2] :up) :up)]
       (swap! game assoc :playing true :discard-pile disc3 :player-hand player2
              :dealer-hand dealer2 :deck deck3 :dealer-feedback "" :player-feedback "")
@@ -181,7 +181,7 @@
 (defn english
   "Given a card value and position (:up or :down),
   return a string giving the card name."
-  [[cval pos]]
+  [cval pos]
   (if (= pos :up)
     (str (nth cardnames (rem cval 13)) " of "
          (nth suits (quot cval 13)))
@@ -191,11 +191,11 @@
   "Display card number N from the given hand. Assign the
   alt and title attributes of the image, and use relative
   positioning to overlap the cards."
-  [n [card pos :as wholecard]]
+  [n [card pos]]
   (let [filename (if (= pos :up) card "blue_grid_back")]
     [:img {:src (str "./images/" filename ".svg")
-           :alt (english wholecard)
-           :title (english wholecard)
+           :alt (english card pos)
+           :title (english card pos)
            :style {:position "relative"
                    :left (* -55 n)
                    :height "133px"
