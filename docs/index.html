@@ -3,8 +3,7 @@
 <head>
   <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
   <meta http-equiv="Content-Style-Type" content="text/css" />
-  <title>Blackjack in ClojureScript</title>
-  <style type="text/css">code{white-space: pre;}</style>
+  <title>Blackjack in ClojureScript&mdash;How It Was Written</title>
   <link rel="stylesheet" href="style.css" type="text/css" />
 </head>
 <body>
@@ -286,19 +285,23 @@ That takes care of the game logic.
 <h2>User Interface</h2>
 
 <p>
-    The rest of the code displays the card playing area (the tableau) and handles events, all using the Reagent library. In Reagent, a user interface <dfn>component</dfn> is a function that describes the HTML to be displayed and the functions to which it should react:
+Two more items need to be added to the <code>game</code> atom: <code>:player-feedback</code> (initially the empty string) and <code>:feedback-color</code> (<code>:red</code>, <code>:green</code>, or <code>:black</code> for loss, win, and tie). I&rsquo;m not showing the code here; it&rsquo;s just two more entries into the key/value map.
+ (Originally the design had two feedback areas; one above the dealer&rsquo;s cards and one above the player&rsquo;s. During development, I eliminated the feedback at the dealer area, as it was too confusing to look in two different places to figure out whether you had won or lost.)</p>
+
+<p>
+    The rest of the code displays the card playing area (the tableau) and handles events, all using the Reagent library. If you&rsquo;re not familiar with Reagent, <a href="http://reagent-project.github.io/">stop and read this excellent introduction</a>. TL;DR: In Reagent, a user interface <dfn>component</dfn> is a function that describes the HTML to be displayed and the functions to which it should react. Here is the code that generates the tableau.
 </p>
 
 <div><pre>  1  (defn tableau
   2    "Display the playing area (the tableau)."
   3    []  
-  4    (let [{:keys [dealer-hand player-hand playing dealer-feedback player-feedback
+  4    (let [{:keys [dealer-hand player-hand playing player-feedback feedback-color
   5                  player-money current-bet]} @game]
   6    [:div
-  7     [:h2 "Dealer’s Cards " [:span {:class "dealerFeedback"} dealer-feedback]]
+  7     [:h2 "Dealer’s Cards"]
   8     [show-cards dealer-hand]
   9     [:hr]
- 10     [:h2 "Your Cards " [:span {:class "playerFeedback"} player-feedback]]
+ 10     [:h2 "Your Cards" [:span {:style {:color feedback-color}} player-feedback]]
  11     [show-cards player-hand]
  12     [:p 
  13      [:input {:type "button"
@@ -333,8 +336,8 @@ That takes care of the game logic.
     <dd>Get all the values from the <code>game</code> atom</dd>
     <dt>Line 6</dt>
     <dd>HTML is represented as a vector, with element names as keywords.</dd>
-    <dt>Line 7</dt>
-    <dd>You can nest elements (the <code>[:span...]</code>). Attributes are represented as a ClojureScript map. The content of the span is <code>dealer-feedback</code>, which is bound to the value from the <code>game</code> atom. This means that any change to that part of the atom will be reflected in the HTML.</dd>
+    <dt>Line 9</dt>
+    <dd>You can nest elements (the <code>[:span...]</code>). Attributes are represented as a ClojureScript map. The content of the span is <code>player-feedback</code>, which is bound to the value from the <code>game</code> atom. This means that any change to that part of the atom will be reflected in the HTML.</dd>
     <dt>Line 8</dt>
     <dd>The <code>:h2</code> element is followed by another component: <code>show-cards player-hand</code> will call the <code>show-cards</code> function with <code>player-hand</code> as its argument. Again, because <code>player-hand</code> is bound to part of the atom, any change to that value will re-display that component.</dd>
     <dt>Line 15</dt>
@@ -345,7 +348,7 @@ That takes care of the game logic.
 
 <h2>Displaying Cards</h2>
 <p>
-This code creates an HTML <code>&lt;div&gt;</code> element that contains the images of the cards in a person&rsquo;s hand by mapping <code>card-image</code> across all the cards:
+This code creates an HTML <code>&lt;div&gt;</code> element that contains the images of the cards in a person&rsquo;s hand by mapping <code>card-image</code> across all the cards. The function given to <code>map-indexed</code> will receive the index number of the item in the sequence and the item as its arguments. The result goes <code>into</code> a vector and thus becomes a component.
 </p>
 
 <div><pre>(defn show-cards [hand]
@@ -353,6 +356,193 @@ This code creates an HTML <code>&lt;div&gt;</code> element that contains the ima
                    (map-indexed card-image hand))))</pre></div>
 
 <p>
-<code>card-image</code> is given the entire hand and a card number as its arguments. It then creates an <code>&lt;img&gt;</code> element with an appropriate <code>alt</code> and <code>title</code> attribute. The reason the
+<code>card-image</code> is given an index number and a card as its arguments. It then creates an <code>&lt;img&gt;</code> element with an appropriate <code>src</code> attribute (lines 3 and 4 in the following code). It also sets the <code>alt</code> and <code>title</code> attribute using the <code>english</code> function (lines 5 and 6). The reason the index is required is so that the cards can be relatively positioned to overlap (line 8).
+</p>
+
+<div><pre> 1 (defn card-image
+ 2   [n [card pos]]
+ 3   (let [filename (if (= pos :up) card "blue_grid_back")]
+ 4     [:img {:src (str "./images/" filename ".svg")
+ 5            :alt (english card pos)
+ 6            :title (english card pos)
+ 7            :style {:position "relative"
+ 8                    :left (* -55 n)
+ 9                    :height "133px"
+10                    :width "98px"}}]))</pre></div>
+
+<aside>
+    One of the hardest parts of writing this program was finding some good card images. Many of the open source card images I found were small GIFs or extremely ornate&mdash;and large&mdash;SVG files. I found the images at my go-to place for such things: the <a href="http://openclipart.org">Open Clip Art Library</a>. The cards designed by <a href="http://nicubunu.ro/">Nicu Buculei</a> were just what I needed.
+</aside>
+
+<p>This is the code for conversion to English; just an integer division and remainder to figure out the suit and card:</p>
+
+<div><pre>(def cardnames ["Ace", "2", "3", "4", "5", "6", "7", "8", "9" "10" "Jack" "Queen" "King"])
+(def suits ["clubs" "diamonds" "hearts" "spades"])
+
+(defn english [cval pos]
+  (if (= pos :up)
+    (str (nth cardnames (rem cval 13)) " of "
+         (nth suits (quot cval 13)))
+    "face down card")</pre>)</div>
+
+<h2>Event Handling</h2>
+<p>
+The events that the code has to handle are:
+</p>
+<ul>
+    <li>Click on the <span class="button">Start Game</span> button</li>
+    <li>Click on the <span class="button">Hit</span> or <span class="button">Stand</span> buttons</li>
+    <li>Change of the amount bet.</li>
+    <li>Click on the <span class="button">Recharge Money</span> button when the player&rsquo;s money hits zero.</li>
+</ul>
+
+<h3>Starting the Game</h3>
+
+<div><pre> 1 (defn start-game
+ 2   [event]
+ 3   (let [{:keys [deck discard-pile dealer-hand player-hand current-bet]} @game
+ 4         [player1 pile0] (discard [player-hand discard-pile])
+ 5         [dealer1 pile1] (discard [dealer-hand pile0])]
+ 6         [deck2 dealer2 pile2] (deal (deal [deck dealer1 pile1] :up) :down)
+ 7         [deck3 player2 pile3] (deal (deal [deck2 player1 pile2] :up) :up)]
+ 8     (swap! game assoc :playing true :discard-pile pile3 :player-hand player2
+ 9            :dealer-hand dealer2 :deck deck3 :dealer-feedback "" :player-feedback "")
+10     (if (immediate-win dealer2 player2)
+11       (do
+12         (swap! game assoc :dealer-hand (reveal dealer2))
+13         (end-game dealer2 player2)))))</pre></div>
+
+<p>
+    At the beginning of a new game, the code has to:
+</p>
+
+<ul>
+    <li>Take any cards currently on the tableau and put them on the discard pile (lines 4-5)</li>
+    <li>Deal a card face up, then a card face down to the dealer (line 6)</li>
+    <li>Deal two face-up cards to the player (line 7)</li>
+    <li>Update the <code>game</code> atom and clear the feedback area (lines 8-9)</li>
+</ul>
+
+<p>
+You may be wondering why I am creating variables like <code>deck3</code> and <code>player2</code> instead of re-using the variable names:
+</p>
+
+<div><pre>  (let [{:keys [deck discard-pile dealer-hand player-hand current-bet]} @game
+        [player pile] (discard [player-hand discard-pile])
+        [dealer pile] (discard [dealer-hand pile])
+        [deck dealer pile] (deal (deal [deck dealer pile] :up) :down)
+        [deck player pile] (deal (deal [deck player pile] :up) :up)]</pre></div>
+
+<p>
+The reason is that I come from an Erlang background, where variables are not only immutable but are also <dfn>single-assignment</dfn>. Once you bind a value to a symbol, you cannot rebind another value to that symbol; you must create a new symbol.
+</p>
+
+<h3>Hit and Stand</h3>
+<p>
+If the player or dealer don&rsquo;t have blackjack, the player can either <dfn>hit</dfn> to request another card or <dfn>stand</dfn> to say they are happy with their hand. The following code deals a card face up to the player, evaluates the hand, updates the <code>game</code> atom, and ends the game if the total is over 21 (the player has &ldquo;busted&rdquo;).
+</p>
+
+<div><pre>(defn hit-me [event]
+  (let [{:keys [deck discard-pile dealer-hand player-hand]} @game
+        [deck2 player2 discard2] (deal [deck player-hand discard-pile] :up)
+        [total status] (evaluate-hand player2)]
+    (swap! game assoc :player-hand player2 :deck deck2 :discard-pile discard2)
+    (if (= status :bust) (end-game dealer-hand player2))))</pre></div>
+
+<p>
+    Here is the code that is invoked when the player clicks the <span class="button">Stand</span> button.
+    </p>
+
+<div><pre>  1 (defn stand [event]
+  2   (let [{:keys [deck dealer-hand player-hand discard-pile]} @game
+  3         dhand (reveal dealer-hand)]
+  4     (swap! game assoc :dealer-hand dhand)
+  5     (loop [loop-deck deck
+  6            loop-hand dhand
+  7            loop-pile discard-pile]
+  8       (let [[total status] (evaluate-hand loop-hand)]
+  9         (if (or (= status :bust) (>= total 17))
+ 10           (do
+ 11             (swap! game assoc :dealer-hand loop-hand)
+ 12             (end-game loop-hand player-hand))
+ 13           (let [[new-deck new-hand new-discard] (deal [loop-deck loop-hand loop-pile] :up)]
+ 14             (swap! game assoc :dealer-hand new-hand)
+ 15             (recur new-deck new-hand new-discard)))))))</pre></div>
+
+<p>
+The code reveals the dealer&rsquo;s face-down card (line 3) and updates the atom in order to force the card to redisplay (line 4). Lines 5-7 start a loop that evaluates the hand (line 8). If the dealer has to stop taking cards (either because they went bust or over 17), then update the display and end the game (lines 11-12). Otherwise, deal another card into the dealer hand (line 13), update (line 14), and get another card (line 15)&mdash;<code>recur</code> invokes the loop again.
+</p>
+
+
+<h3>Ending the Game</h3>
+
+<p>
+If the game is over, the code must look at the dealer&rsquo;s and player&rsquo;s hand, determine the winner, update the feedback area, and update the money. The <code>end-game</code> is pretty much a list of conditions.
+</p>
+
+<p>The <code>end-game</code> code is pretty much a list of conditions:</p>
+
+<div><pre>(defn end-game [dealer player]
+  (let [[ptotal pstatus] (evaluate-hand player)
+        [dtotal dstatus] (evaluate-hand dealer)]
+    (cond
+      (> ptotal 21) (feedback "Sorry, you busted." :red)
+      (> dtotal 21) (feedback "Dealer goes bust. You win!" :green)
+      (= ptotal dtotal) (feedback "Tie game." :black)
+      (= pstatus :blackjack) (feedback "You win with blackjack!" :green)
+      (= dstatus :blackjack) (feedback "Dealer has blackjack." :red)
+      (< ptotal dtotal) (feedback "Dealer wins." :red)
+      (> ptotal dtotal) (feedback "You win!" :green)
+      :else (feedback "Unknown result (Shouldn't happen.)" :gray))
+    (update-money dtotal dstatus ptotal pstatus)
+    (swap! game assoc :playing false)))</pre></div>
+
+<p>
+    The <code>feedback</code> function changes the <code>:player-feedback</code> and <code>:feedback-color</code> values in the <code>game</code>, and Reagent will automagically do the update.
+</p>
+
+<div><pre>(defn feedback [message color]
+  (swap! game assoc :player-feedback (str "\u00a0" message) :feedback-color (name color)))</pre></div>
+
+<p>
+Updating the money is, again, a list of conditions. However, I do feel rather guilty about accessing the player money and current bet directly from the <code>game</code> atom instead of passing them as parameters. It really feels imperative rather than functional. Sorry about that.
+</p>
+
+<div><pre>(defn update-money [dtotal dstatus ptotal pstatus]
+  (let [{:keys [player-money current-bet]} @game
+        new-money (cond
+                    (= ptotal dtotal) player-money ;; least common, but avoids lots of ugliness later
+                    (= pstatus :blackjack) (+ player-money (* 1.5 current-bet))
+                    (= pstatus :bust) (- player-money current-bet)
+                    (or (= dstatus :bust) (> ptotal dtotal)) (+ player-money current-bet)
+                    (< ptotal dtotal)(- player-money current-bet)
+                    :else player-money)]
+    (swap! game assoc :player-money new-money :current-bet (max 0 (min current-bet new-money)))))</pre></div>
+
+<h3>More Money Matters</h3>
+<p>
+Finally, the code for handling a change in the amount of bet and allowing people to recharge their money if they gamble their entire bankroll and lose:
+</p>
+
+<div><pre>(defn change-bet [event]
+  (let [val (.parseFloat js/window (.-value (.-target event)))
+        amount (if (js/isNaN val) 0 val)
+        total (:player-money @game)]
+    (swap! game assoc :current-bet (max 0 (min amount total)))))
+
+(defn recharge-money [event]
+  (swap! game assoc :current-bet 10 :player-money 1000))</pre></div>
+
+<p>
+The code for <code>change-bet</code> is the only event handler that uses the information from the <code>event</code> parameter to retrieve the value the player typed. It&rsquo;s converted to a number (or zero if that isn&rsquo;t possible), and then the <code>game</code> atom is updated so that the current bet cannot go negative or greater than the amount of money you have. It is possible to bet zero, and that wasn&rsquo;t intentional, so I rationalized it: people who have moral restrictions against gambling can still play the game without having to bet.
+</p>
+
+<p>
+Recharging the money updates the appropriate values in the <code>game</code> atom.
+</p>
+
+<h2>Wrap-up</h2>
+<p>
+Well, there you have it.
 </body>
 </html>
