@@ -105,8 +105,8 @@
 (defn end-game [dealer player]
   (let [[ptotal pstatus] (evaluate-hand player)
         [dtotal dstatus] (evaluate-hand dealer)]
-    (println "Player:" player ptotal pstatus)
-    (println "Dealer:" dealer dtotal dstatus)
+;;    (println "Player:" player ptotal pstatus)
+;;    (println "Dealer:" dealer dtotal dstatus)
     (cond
       (> ptotal 21) (feedback "Sorry, you busted." "Dealer wins.")
       (> dtotal 21) (feedback "You win!" "Dealer goes bust.")
