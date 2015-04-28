@@ -17,9 +17,6 @@
                      :player-feedback ""
                      :dealer-feedback ""}))
 
-(def cardnames ["ace", "2", "3", "4", "5", "6", "7", "8", "9" "10" "J" "Q" "K"])
-(def suits ["clubs" "diamonds" "hearts" "spades"])
-
 (defn deal
   "Deal one card from the deck to a hand in the given
   position (face up or face down), possibly using the
@@ -48,15 +45,6 @@
                      ace-value
                      (min 10 card-mod))]
     [(+ acc card-value) (if (= card-mod 1) 1 ace-value)]))
-
-(defn english
-  "Given a card value and position (:up or :down),
-  return a string giving the card name."
-  [[cval pos]]
-  (if (= pos :up)
-    (str (nth cardnames (rem cval 13)) " of "
-         (nth suits (quot cval 13)))
-    "face down card"))
 
 (defn evaluate-hand
   "Get total value of hand. Return a vector with total and
@@ -187,15 +175,24 @@
   [event]
   (swap! game assoc :current-bet 10 :player-money 1000))
 
+(def cardnames ["ace", "2", "3", "4", "5", "6", "7", "8", "9" "10" "J" "Q" "K"])
+(def suits ["clubs" "diamonds" "hearts" "spades"])
+
+(defn english
+  "Given a card value and position (:up or :down),
+  return a string giving the card name."
+  [[cval pos]]
+  (if (= pos :up)
+    (str (nth cardnames (rem cval 13)) " of "
+         (nth suits (quot cval 13)))
+    "face down card"))
+
 (defn card-image
   "Display card number N from the given hand. Assign the
   alt and title attributes of the image, and use relative
   positioning to overlap the cards."
-  [hand n]
-  (let [[card pos :as wholecard] (if (< n (count hand))
-                                   (nth hand n)
-                                   [-1 :up])
-        filename (if (< card 0) "outline" (if (= pos :up) card "blue_grid_back"))]
+  [n [card pos :as wholecard]]
+  (let [filename (if (= pos :up) card "blue_grid_back")]
     [:img {:src (str "./images/" filename ".svg")
            :alt (english wholecard)
            :title (english wholecard)
@@ -208,7 +205,7 @@
   "Show all the cards in a hand."
   [hand]
   (into [] (concat [:div {:class "cards"}]
-                   (map (fn [x] (card-image hand x)) (range 0 (count hand))))))
+                   (map-indexed card-image hand))))
 
 (defn tableau
   "Display the playing area (the tableau)."
