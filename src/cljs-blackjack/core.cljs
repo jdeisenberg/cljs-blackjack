@@ -175,7 +175,7 @@
   [event]
   (swap! game assoc :current-bet 10 :player-money 1000))
 
-(def cardnames ["ace", "2", "3", "4", "5", "6", "7", "8", "9" "10" "J" "Q" "K"])
+(def cardnames ["Ace", "2", "3", "4", "5", "6", "7", "8", "9" "10" "Jack" "Queen" "King"])
 (def suits ["clubs" "diamonds" "hearts" "spades"])
 
 (defn english
