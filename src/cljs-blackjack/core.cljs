@@ -119,11 +119,11 @@
   win."
   [event]
   (let [{:keys [deck discard-pile dealer-hand player-hand current-bet]} @game
-        [player1 disc0] (discard [player-hand discard-pile])
-        [dealer1 disc1] (discard [dealer-hand disc0])
-        [deck2 dealer2 disc2] (deal (deal [deck dealer1 disc1] :up) :down)
-        [deck3 player2 disc3] (deal (deal [deck2 player1 disc2] :up) :up)]
-    (swap! game assoc :playing true :discard-pile disc3 :player-hand player2
+        [player1 pile0] (discard [player-hand discard-pile])
+        [dealer1 pile1] (discard [dealer-hand pile0])
+        [deck2 dealer2 pile2] (deal (deal [deck dealer1 pile1] :up) :down)
+        [deck3 player2 pile3] (deal (deal [deck2 player1 pile2] :up) :up)]
+    (swap! game assoc :playing true :discard-pile pile3 :player-hand player2
            :dealer-hand dealer2 :deck deck3 :player-feedback "" :feedback-color :black)
     (if (immediate-win dealer2 player2)
       (do
