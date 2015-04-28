@@ -22,6 +22,7 @@ pre {
 code {
     font-family: monospace;
     background-color: #ececec;
+    white-space:pre;
 }
 h1 a, h2 a, h3 a, h4 a, h5 a {
     text-decoration: none;
@@ -79,4 +80,21 @@ dd p {
 th, td {
     border: 1px solid gray;
     padding: 0.25em;
+}
+
+aside {
+    margin: 1em;
+    border: 1px solid black;
+    padding: 0.5em;
+    background-color: #ffc;
+    font-size: small;
+}
+
+.button {
+    display: inline-block;
+    background-color: #ddd;
+    padding: 0 0.25em;
+    margin: 0.25em 0;
+    border: 1px solid #888;
+    border-radius: 0.5em;
 }
