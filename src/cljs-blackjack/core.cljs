@@ -18,7 +18,7 @@
                      :dealer-feedback ""}))
 
 (def cardnames ["ace", "2", "3", "4", "5", "6", "7", "8", "9" "10" "J" "Q" "K"])
-(def suits [" of clubs" " of diamonds" " of hearts" " of spades"])
+(def suits ["clubs" "diamonds" "hearts" "spades"])
 
 (defn deal
   "Deal one card from the deck to a hand in the given
@@ -49,14 +49,14 @@
                      (min 10 card-mod))]
     [(+ acc card-value) (if (= card-mod 1) 1 ace-value)]))
 
-(defn english [[cval pos]]
+(defn english
+  "Given a card value and position (:up or :down),
+  return a string giving the card name."
+  [[cval pos]]
   (if (= pos :up)
-    (str (nth cardnames (rem cval 13))
+    (str (nth cardnames (rem cval 13)) " of "
          (nth suits (quot cval 13)))
     "face down card"))
-
-(defn english-hand [hand]
-    (reduce (fn [acc card] (conj acc (english card))) '[] hand))
 
 (defn evaluate-hand
   "Get total value of hand. Return a vector with total and
@@ -70,12 +70,9 @@
                   :else :bust)])))
 
 (defn immediate-win
-  "Given player hand and dealer hand, return
-  :none (nobody wins instantly)
-  :tie (both have blackjack)
-  :dealer-blackjack
-  :player-blackjack"
-  [player-hand dealer-hand]
+  "Given player hand and dealer hand, return true if someone
+  has blackjack, false otherwise."
+  [dealer-hand player-hand]
   (let [[ptotal _] (evaluate-hand player-hand)
         [dtotal _] (evaluate-hand dealer-hand)]
     (or (= ptotal 21) (= dtotal 21))))
@@ -87,11 +84,12 @@
   (let [result (vec (map (fn [card] [(first card) :up]) hand))]
     result))
 
-(defn feedback
-  [player dealer]
-  (swap! game assoc :player-feedback player :dealer-feedback dealer))
-
-(defn update-money [ptotal pstatus dtotal dstatus]
+(defn update-money
+  "Given the totals and status for dealer and player,
+  update the player's money. Make sure current bet is
+  between 0 and the current amount of money. This function
+  is awfully imperative. (Sorry.)"
+  [dtotal dstatus ptotal pstatus]
   (let [{:keys [player-money current-bet]} @game
         new-money (cond
                     (= ptotal dtotal) player-money ;; least common, but avoids lots of ugliness later
@@ -102,23 +100,36 @@
                     :else player-money)]
     (swap! game assoc :player-money new-money :current-bet (max 0 (min current-bet new-money)))))
 
-(defn end-game [dealer player]
+(defn feedback
+  "Given feedback for the dealer and player, update the reactive fields."
+  [dealer player]
+  (swap! game assoc :dealer-feedback dealer :player-feedback player))
+
+(defn end-game
+  "Evaluate the dealer's and player's hands when the
+  game has ended."
+  [dealer player]
   (let [[ptotal pstatus] (evaluate-hand player)
         [dtotal dstatus] (evaluate-hand dealer)]
 ;;    (println "Player:" player ptotal pstatus)
 ;;    (println "Dealer:" dealer dtotal dstatus)
     (cond
-      (> ptotal 21) (feedback "Sorry, you busted." "Dealer wins.")
-      (> dtotal 21) (feedback "You win!" "Dealer goes bust.")
-      (= ptotal dtotal) (feedback "Tie." "")
-      (= pstatus :blackjack) (feedback "You win with blackjack!" "")
-      (= dstatus :blackjack) (feedback "" "Dealer has blackjack.")
-      (< ptotal dtotal) (feedback "" "Dealer wins.")
-      (> ptotal dtotal) (feedback "You win!" ""))
-    (update-money ptotal pstatus dtotal dstatus)
+      (> ptotal 21) (feedback "Dealer wins." "Sorry, you busted.")
+      (> dtotal 21) (feedback "Dealer goes bust." "You win!")
+      (= ptotal dtotal) (feedback "" "Tie.")
+      (= pstatus :blackjack) (feedback "" "You win with blackjack!")
+      (= dstatus :blackjack) (feedback "Dealer has blackjack." "")
+      (< ptotal dtotal) (feedback "Dealer wins." "")
+      (> ptotal dtotal) (feedback "" "You win!")
+      :else (feedback "" "Unknown result (Shouldn't happen.)"))
+    (update-money dtotal dstatus ptotal pstatus)
     (swap! game assoc :playing false)))
 
-(defn start-game [event]
+(defn start-game
+  "Deal two cards to the player (both face up), and two to the dealer (one
+  face down and one face up). Update the game atom, and check for an immediate
+  win."
+  [event]
   (let [{:keys [deck discard-pile dealer-hand player-hand current-bet]} @game
         [player1 disc0] (discard [player-hand discard-pile])
         [dealer1 disc1] (discard [dealer-hand disc0])]
@@ -126,19 +137,26 @@
           [deck3 player2 disc3] (deal (deal [deck2 player1 disc2] :up) :up)]
       (swap! game assoc :playing true :discard-pile disc3 :player-hand player2
              :dealer-hand dealer2 :deck deck3 :dealer-feedback "" :player-feedback "")
-      (if (immediate-win player2 dealer2)
+      (if (immediate-win dealer2 player2)
         (do
           (swap! game assoc :dealer-hand (reveal dealer2))
           (end-game dealer2 player2))))))
 
-(defn hit-me [event]
+(defn hit-me
+  "Deal a card face up to the player, and evaluate the hand.
+  If the player went bust, end the game."
+  [event]
   (let [{:keys [deck discard-pile dealer-hand player-hand]} @game
         [deck2 player2 discard2] (deal [deck player-hand discard-pile] :up)
         [total status] (evaluate-hand player2)]
     (swap! game assoc :player-hand player2 :deck deck2 :discard-pile discard2)
     (if (= status :bust) (end-game dealer-hand player2))))
 
-(defn stand [event]
+(defn stand
+  "Player is satisfied with hand. Reveal the dealer's hand,
+  then deal cards one at a time until the dealer has to stand
+  or goes bust."
+  [event]
   (let [{:keys [deck dealer-hand player-hand discard-pile]} @game
         dhand (reveal dealer-hand)]
     (swap! game assoc :dealer-hand dhand)
@@ -154,16 +172,26 @@
             (swap! game assoc :dealer-hand new-hand)
             (recur new-deck new-hand new-discard)))))))
 
-(defn change-bet [event]
+(defn change-bet
+  "Allow user to change amount of bet, which must be between zero and
+  current amount of money."
+  [event]
   (let [val (.parseFloat js/window (.-value (.-target event)))
         amount (if (js/isNaN val) 0 val)
         total (:player-money @game)]
     (swap! game assoc :current-bet (max 0 (min amount total)))))
 
-(defn recharge-money [event]
+(defn recharge-money
+  "When player's money goes to zero, allow them to recharge
+  to $1000 with default bet of $10."
+  [event]
   (swap! game assoc :current-bet 10 :player-money 1000))
 
-(defn card-image [hand n]
+(defn card-image
+  "Display card number N from the given hand. Assign the
+  alt and title attributes of the image, and use relative
+  positioning to overlap the cards."
+  [hand n]
   (let [[card pos :as wholecard] (if (< n (count hand))
                                    (nth hand n)
                                    [-1 :up])
@@ -176,18 +204,22 @@
                    :height "133px"
                    :width "98px"}}]))
 
-(defn show-cards [hand]
+(defn show-cards
+  "Show all the cards in a hand."
+  [hand]
   (into [] (concat [:div {:class "cards"}]
                    (map (fn [x] (card-image hand x)) (range 0 (count hand))))))
 
-(defn tableau []
+(defn tableau
+  "Display the playing area (the tableau)."
+  []
   (let [{:keys [dealer-hand player-hand playing dealer-feedback player-feedback
                 player-money current-bet]} @game]
   [:div
-   [:h2 "Dealer’s Cards " [:span {:class "feedback"} dealer-feedback]]
+   [:h2 "Dealer’s Cards " [:span {:class "dealerFeedback"} dealer-feedback]]
    [show-cards dealer-hand]
    [:hr]
-   [:h2 "Your Cards " [:span {:class "feedback"} player-feedback]]
+   [:h2 "Your Cards " [:span {:class "playerFeedback"} player-feedback]]
    [show-cards player-hand]
    [:p
     [:input {:type "button"
@@ -208,11 +240,13 @@
               :on-change change-bet
               :value current-bet}]
      " Current money: $" player-money
-    "\u00a0"
+    "\u00a0 \u00a0" ;; spacing
     [:input {:type "button"
              :value "Recharge money"
              :on-click recharge-money
              :style {:display (if (= player-money 0) "inline" "none")}}]]]))
+
+;; Shuffle the deck initially and display the tableau.
 
 (swap! game assoc :deck (into [] (shuffle (range 0 52))))
 (reagent/render-component [tableau] (.getElementById js/document "tableau"))
