@@ -4,6 +4,7 @@ pom.xml.asc
 .idea
 *.iml
 .repl*/
+/release/
 /lib/
 /classes/
 /target/
