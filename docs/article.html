@@ -111,7 +111,7 @@ At some point the deck will be empty and you have to reshuffle the discard pile,
 </p>
 
 <p>
-This is <strong>not</strong> a good approach. In fact, from a functional standpoint, it&rsquo;s dreadful. BecauseI&rsquo;ve split up the dealing process into two parts, then when you deal two cards to the player&rsquo;s hand, you are well on your way to code like this:
+This is <strong>not</strong> a good approach. In fact, from a functional standpoint, it&rsquo;s dreadful. Because I&rsquo;ve split up the dealing process into two parts, then when you deal two cards to the player&rsquo;s hand, the code is well on its way to something like this:
 </p>
 
 <div><pre>(let [[deck player-hand] (del player-hand deck :up)
@@ -224,7 +224,7 @@ Finding the total for a hand involves adding up the values of each card. If you 
 Now evaluating a hand is straightforward.
 </p>
 
-<div><pre>1 (defn evaluate-hand
+<div><pre>1 (defn evaluate-hand [hand]
 2   (let [[pre-total ace-value] (reduce accumulate-value [0 11] hand)
 3         total (if (and (> pre-total 21) (= ace-value 1)) (- pre-total 10) pre-total)]
 4    (vec [total (cond
@@ -247,8 +247,11 @@ At some point, you have to turn over the face-down cards that went to the dealer
 </p>
 
 <div><pre>(defn reveal
+  "This function takes a player's hand and returns a new hand
+  with all the cards in the :up position"
   [hand]
-  (vec (map (fn [card] [(first card) :up]) hand)))</pre></div>
+  (let [result (vec (map (fn [card] [(first card) :up]) hand))]
+    result))</pre></div>
 
 <p>
 And you have to be able to take a hand and put it on the discard pile. The <code>discard</code> function takes a vector consisting of the hand and the current discard pile as it input. It returns a similar vector with an empty hand and the new value of the discard pile. (This will allow the calls to be chained if that is ever desired.) Note that just the card number goes into the discard pile, the <code>:up</code> or <code>:down</code> is irrelevant.
@@ -263,51 +266,93 @@ After the first two cards are dealt, we need to know if there is an immediate wi
 </p>
 
 <ul>
-    <li>Input: Player hand and dealer hand</li>
-    <li>Output:
-        <ul>
-            <li><code>:none</code> (nobody wins instantly)</li>
-            <li><code>:tie</code> (both dealer and player have blackjack)</li>
-            <li><code>:player</code> (player has blackjack)</li>
-            <li><code>:dealer</code> (dealer has blackjack)</li>
-        </ul></li>
+    <li>Input: Dealer hand and player hand</li>
+    <li>Output: <code>true</code> if someone has blackjack, <code>false</code> otherwise.</li>
 </ul>
 
 <p>Here is the code:</p>
 <div><pre>(defn immediate-win
-  [player-hand dealer-hand]
-  (let [[_ player-status] (evaluate-hand player-hand)
-        [_ dealer-status] (evaluate-hand dealer-hand)]
-    (cond
-      (and (= player-status :blackjack) (= dealer-status :blackjack)) :tie
-      (= player-status :blackjack) :player
-      (= dealer-status :blackjack) :dealer
-      :else :none)))</pre></div>
+  [dealer-hand player-hand]
+  (let [[ptotal _] (evaluate-hand player-hand)
+        [dtotal _] (evaluate-hand dealer-hand)]
+    (or (= ptotal 21) (= dtotal 21))))
+</pre></div>
 
-<p>
-And you want to know if there&rsquo;s a winner at any other time, with inputs and outputs the same as for <code>immediate-win</code>:
-</p>
-
-<div><pre>(defn game-status
-  "Given player hand and dealer hand, return:
-  :none (nobody wins yet)
-  :player (player wins)
-  :dealer (dealer wins)
-  :tie"
-  [player-hand dealer-hand]
-  (let [[player-total player-status] (evaluate-hand player-hand)
-    [dealer-total dealer-status] (evaluate-hand dealer-hand)]
-    (cond
-      (and (= player-status :ok)(= dealer-status :ok)) :none
-      (or (< dealer-total player-total) (= dealer-status :bust)) :player
-      (or (< player-total dealer-total) (= player-status :bust)) :dealer
-      (= player-total dealer-total :tie))))</pre></div>
 
 <p>
 That takes care of the game logic.
-<h2>User Interface</h2>
-<p>
 </p>
 
+<h2>User Interface</h2>
+
+<p>
+    The rest of the code displays the card playing area (the tableau) and handles events, all using the Reagent library. In Reagent, a user interface <dfn>component</dfn> is a function that describes the HTML to be displayed and the functions to which it should react:
+</p>
+
+<div><pre>  1  (defn tableau
+  2    "Display the playing area (the tableau)."
+  3    []  
+  4    (let [{:keys [dealer-hand player-hand playing dealer-feedback player-feedback
+  5                  player-money current-bet]} @game]
+  6    [:div
+  7     [:h2 "Dealer’s Cards " [:span {:class "dealerFeedback"} dealer-feedback]]
+  8     [show-cards dealer-hand]
+  9     [:hr]
+ 10     [:h2 "Your Cards " [:span {:class "playerFeedback"} player-feedback]]
+ 11     [show-cards player-hand]
+ 12     [:p 
+ 13      [:input {:type "button"
+ 14               :value "Start Game"
+ 15               :style {:display (if playing "none" "inline")}
+ 16               :on-click start-game}]
+ 17      [:input {:type "button"
+ 18               :value "Hit"
+ 19               :on-click hit-me
+ 20               :style {:display (if playing "inline" "none")}}]
+ 21      [:input {:type "button"
+ 22               :value "Stand"
+ 23               :on-click stand
+ 24               :style {:display (if playing "inline" "none")}}]
+ 25       " Your bet: $"
+ 26       [:input {:type "text"
+ 27                :size "5" 
+ 28                :on-change change-bet
+ 29                :value current-bet}]
+ 30       " Current money: $" player-money
+ 31      "\u00a0 \u00a0" ;; spacing
+ 32      [:input {:type "button"
+ 33               :value "Recharge money"
+ 34               :on-click recharge-money
+ 35               :style {:display (if (= player-money 0) "inline" "none")}}]]]))
+</pre></div>
+
+<p>Here are the Reagent concepts you need to know from these lines.</p>
+
+<dl>
+    <dt>Lines 4-5</dt>
+    <dd>Get all the values from the <code>game</code> atom</dd>
+    <dt>Line 6</dt>
+    <dd>HTML is represented as a vector, with element names as keywords.</dd>
+    <dt>Line 7</dt>
+    <dd>You can nest elements (the <code>[:span...]</code>). Attributes are represented as a ClojureScript map. The content of the span is <code>dealer-feedback</code>, which is bound to the value from the <code>game</code> atom. This means that any change to that part of the atom will be reflected in the HTML.</dd>
+    <dt>Line 8</dt>
+    <dd>The <code>:h2</code> element is followed by another component: <code>show-cards player-hand</code> will call the <code>show-cards</code> function with <code>player-hand</code> as its argument. Again, because <code>player-hand</code> is bound to part of the atom, any change to that value will re-display that component.</dd>
+    <dt>Line 15</dt>
+    <dd>CSS properties are also represented by a map. The <code>display</code> property will be set depending upon the state of <code>playing</code>, which, again, is bound to a value in the <code>game</code> atom.</dd>
+    <dt>Line 16</dt>
+    <dd>This is how you do event handling. When the button is clicked, the <code>start-game</code> function will be called with the event as its argument.</dd>
+</dl>
+
+<h2>Displaying Cards</h2>
+<p>
+This code creates an HTML <code>&lt;div&gt;</code> element that contains the images of the cards in a person&rsquo;s hand by mapping <code>card-image</code> across all the cards:
+</p>
+
+<div><pre>(defn show-cards [hand]
+  (into [] (concat [:div {:class "cards"}]
+                   (map-indexed card-image hand))))</pre></div>
+
+<p>
+<code>card-image</code> is given the entire hand and a card number as its arguments. It then creates an <code>&lt;img&gt;</code> element with an appropriate <code>alt</code> and <code>title</code> attribute. The reason the
 </body>
 </html>
