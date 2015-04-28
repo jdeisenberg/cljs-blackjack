@@ -1,0 +1,313 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+  <meta http-equiv="Content-Style-Type" content="text/css" />
+  <title>Blackjack in ClojureScript</title>
+  <style type="text/css">code{white-space: pre;}</style>
+  <link rel="stylesheet" href="style.css" type="text/css" />
+</head>
+<body>
+<h1>Blackjack in ClojureScript</h1>
+<p>
+    Many years ago—in 1998—I implemented a version of <a href="http://catcode.com/cardgame/sb21.html">Blackjack using dynamic HTML</a>. Hey, using JavaScript to control a web page was new and shiny back then.
+</p>
+<p>
+    I decided to do an update of the code to learn some <a href="https://github.com/clojure/clojurescript">ClojureScript</a>. Also to update the graphics :)
+</p>
+
+<h2 id="data-structures">Data Structures</h2>
+
+<p>
+    The first question is how to represent a playing card. I could store it as a vector of two elements: like so: <code>[3 &quot;clubs&quot;]</code>, but that’s not a good representation, as some of the card names would be strings rather than numbers, e.g., <code>&quot;Queen&quot;</code>. Instead, I decided to go with a number from 0 to 51. Numbers 0-12 are the clubs, 13-25 diamonds, and similarly for hearts and spades. Within each set of thirteen, the first card is the Ace, then 2 through 10, Jack, Queen, and King.
+</p>
+
+<p>
+    This is a better representation, since it makes calculating a card’s base value a simple matter of division and remainders. When I need the text representation of a card for the <code>alt</code> attribute of a card image, it’s easy enough to write a function to generate that.
+</p>
+
+<p>
+    When a card goes into a player’s hand, I need to know if it is face up or face down. So, in a player’s hand, a card is represented by a two-element vector: <code>[0 :up]</code>—the Ace of Clubs, face up.
+</p>
+
+<p>
+    Once that fundamental issue is taken care of, what other data does the game need?
+</p>
+<ul>
+    <li>The deck: a vector of integers</li>
+    <li>The discard pile: a vector of integers. Once a game is played, the cards go into the discard pile; if the deck is empty, the discard pile is shuffled and becomes the new deck.</li>
+    <li>The dealer’s cards: a vector of <code>[<i>integer</i> :up|:down]</code> pairs</li>
+    <li>The player’s cards: a vector of <code>[<i>integer</i> :up|:down]</code> pairs</li>
+    <li>The amount of money the player has left: a number</li>
+    <li>The player’s current bet: a number</li>
+</ul>
+<p>
+    At this point, you may be wondering &ldquo;So, where&rsquo;s the ClojureScript? It will be here soon, but one of the things that functional programming encourages is figuring out what you need to do <em>before</em> you start coding. Now that this part seems reasonably figured out, here is the ClojureScript for the game state. It&rsquo;s an atom that holds a map, with the deck initialized to a shuffle of the numbers 0 through 52.
+</p>
+<pre>(defonce game (atom {:deck (into [] (shuffle (range 0 52)))
+                     :discard-pile []
+                     :dealer-hand []
+                     :player-hand []
+                     :player-money 1000.0
+                     :current-bet 0}))
+</pre>
+
+<h2>Transformations</h2>
+
+<p>
+    Now it&rsquo;s time to figure out what transformations are needed. That&rsquo;s what functions do&mdash;they transform input to output.
+</p>
+
+<h3>Dealing A Card</h3>
+<p>
+Here are the transformations that have to happen when you deal a card:
+</p>
+
+<table>
+    <thead>
+    <tr><th>Input</th><th>Output</th><th>Code</th></tr>
+    </thead>
+    <tbody>
+    <tr>
+        <td>
+            <ul>
+                <li>The deck</li>
+                <li>A hand</li>
+                <li>How to deal the card (<code>:up</code> or <code>:down</code>)</li>
+            </ul>
+        </td>
+        <td>
+            <ul>
+                <li>The deck without the first card</li>
+                <li>The hand with a new card, dealt <code>:up</code> or <code>:down</code></li>
+            </ul>
+        </td>
+        <td>
+        <pre>(defn deal
+  [deck hand position]
+  (let [card (first deck)]
+    (vec [(rest deck) (conj hand [card position])])))</pre>
+        </td>
+    </tr>
+    </tbody>
+</table>
+
+<h3>Reshuffling</h3>
+<p>
+At some point the deck will be empty and you have to reshuffle the discard pile, which becomes the new deck, and the discard pile is emptied.
+</p>
+
+<ul>
+    <li>Input: The deck and the discard pile</li>
+    <li>Output: A new deck and an empty vector (the new discard pile)</li>
+    <li>Code:<pre>(defn reshuffle
+  [deck discard]
+  [(shuffle discard) []])</pre>
+    </li>
+</ul>
+
+<p>
+    <img src="stop-sign.svg" width="135" height="135" alt="Stop sign"/>
+</p>
+
+<p>
+This is <strong>not</strong> a good approach. In fact, from a functional standpoint, it&rsquo;s dreadful. BecauseI&rsquo;ve split up the dealing process into two parts, then when you deal two cards to the player&rsquo;s hand, you are well on your way to code like this:
+</p>
+
+<div><pre>(let [[deck player-hand] (del player-hand deck :up)
+      [deck discard-pile2] (reshuffle deck discard-pile)
+      [deck player-hand] (deal player-hand deck :up)
+      [deck discard-pile] (reshuffle deck discard-pile)]
+  ...)</pre></div>
+
+<p>
+    ...and you&rsquo;re back in imperative programming land again. After further thought, the deck, hand, <em>and</em> discard pile are all of a piece. Why not have <code>deal</code> take two arguments: a vector of <code>[deck&nbsp;hand&nbsp;discard-pile]</code> and a position (<code>:up</code> or <code>:down</code>). Then the return value of a <code>deal</code> can be fed directly to the first parameter of another <code>deal</code>:
+</p>
+
+<div><pre>(deal (deal [deck player-hand discard-pile] :up) :up)</pre></div>
+
+<p>
+Here is the better way:
+</p>
+
+<table>
+    <thead>
+    <tr><th>Input</th><th>Output</th><th>Code</th></tr>
+    </thead>
+    <tbody>
+    <tr>
+        <td>
+            <ul>
+                <li>The deck</li>
+                <li>A hand</li>
+                <li>The discard pile</li>
+                <li>How to deal the card (<code>:up</code> or <code>:down</code>)</li>
+            </ul>
+        </td>
+        <td>
+            <ul>
+                <li>The deck without the first card</li>
+                <li>The hand with a new card, dealt <code>:up</code> or <code>:down</code></li>
+                <li>The discard pile (changed if the deck was empty)</li>
+            </ul>
+        </td>
+        <td>
+        <pre>(defn deal
+  [[deck hand discard-pile] position]
+  [[deck hand discard-pile] position]
+  (let [new-deck (if (empty? deck) (shuffle discard-pile) deck)
+        new-discard (if (empty? deck) [] discard-pile)
+        card [(first new-deck) position]]
+      [(rest new-deck) (conj hand card) new-discard]))</pre>
+        </td>
+    </tr>
+    </tbody>
+</table>
+
+<h3>Evaluating a Hand</h3>
+<p>
+    Now that you can deal someone a hand, you have to know what its total value is. The function to do that has a hand as its input and produces a vector in the form <code>[<i>total</i> :ok|:blackjack|:bust]</code>.  The first entry in the vector is the total value of the hand; the second entry tells whether the total is <code>:ok</code> (less than or equal to 21), <code>:blackjack</code> (an Ace and any card worth 10), or <code>:bust</code> (greater than 21). Let&rsquo;s break this into smaller pieces.
+</p>
+
+<p>
+Finding the total for a hand involves adding up the values of each card. If you think this is a good place to use the <code>reduce</code> function, you are correct.  But this code won&rsquo;t work:
+</p>
+
+<div>
+    <pre>(reduce (fn [acc card] (+ acc (mod (first card) 13)) 1) hand)</pre>
+</div>
+
+<p>
+    It doesn&rsquo;t work for two reasons:
+</p>
+
+<ul>
+    <li>Adding one to the <code>mod 13</code> value of the card gives the wrong values for the Jack, Queen, and King. They are all worth 10, not 11, 12, and 13.</li>
+    <li>This code thinks Aces are worth one point, but the first Ace in a hand is worth 1 or 11. (It counts as 11 unless you would go bust, in which case it is worth only one.) The other Aces are worth one each.</li>
+    </ul>
+
+<p>
+    The first problem is easily solved. For non-Aces, take the minimum of the <code>mod</code> value and 10; that caps the value at 10. The second problem is a bit trickier. The function used with <code>reduce</code> needs to keep track of <em>two</em> things in its accumulator: the current total <em>and</em> the current value of an Ace. Luckily for us, there&rsquo;s no law that says the accumulator cannot be a vector.  Here is the code that will accumulate the value of a hand.
+</p>
+
+<div><pre>1 (defn accumulate-value
+2   [[acc ace-value] card]
+3   (let [card-mod (inc (mod (first card) 13))
+4         card-value (if (= card-mod 1)
+5                      ace-value
+6                      (min 10 card-mod))]
+7     [(+ acc card-value)
+8      (if (= card-mod 1) 1 ace-value)]))</pre></div>
+
+<p>
+    Going through the relevant lines:
+</p>
+
+<dl>
+    <dt>Line 2:</dt>
+    <dd>This line uses destructuring to take the first argument (a vector) and bind it to the symbols <code>acc</code> (the total value) and <code>ace-value</code> (the current value of an Ace)</dd>
+    <dt>Line 3:</dt>
+    <dd>Calculate the &ldquo;base value&rdquo; of the card by taking it mod 13 and adding 1.</dd>
+    <dt>Line 4:</dt>
+    <dd>If the base value is 1, this is an Ace, so...</dd>
+    <dt>Line 5:</dt>
+    <dd>The card&rsquo;s final value is the current value of an Ace</dd>
+    <dt>Line 6:</dt>
+    <dd>Otherwise, its final value is capped at 10</dd>
+    <dt>Line 7:</dt>
+    <dd>The return value for the next stage of <code>reduce</code> must be a vector. The first item in the vector is the current total plus the card&rsquo;s final value</dd>
+    <dt>Line 8:</dt>
+    <dd>And the second item is the new value for an Ace. If this card is an Ace, then this at least our first Ace, and the new value for any subsequent Aces is 1; otherwise the value of an Ace remains unchanged.</dd>
+</dl>
+
+<p>
+Now evaluating a hand is straightforward.
+</p>
+
+<div><pre>1 (defn evaluate-hand
+2   (let [[pre-total ace-value] (reduce accumulate-value [0 11] hand)
+3         total (if (and (> pre-total 21) (= ace-value 1)) (- pre-total 10) pre-total)]
+4    (vec [total (cond
+5                  (and (= total 21) (= (count hand) 2)) :blackjack
+6                  (<= total 21) :ok
+7                  :else :bust)])))</pre></div>
+
+<dl>
+    <dt>Line 2:</dt>
+    <dd>Notice the initial value <code>[0 11]</code> passed to <code>reduce</code>: the zero is the initial value of the total, and the value of an Ace (which will be the first one) is 11.</dd>
+    <dt>Line 3:</dt>
+    <dd>If the hand would have gone over 21 and there is at least one Ace, count the first Ace as only 1 instead of 11 by subtracting 10.</dd>
+    <dt>Line 5:</dt>
+    <dd>The <code>cond</code> gives the hand&rsquo;s status. The test for a Blackjack works because if you have a total of 21 and only two cards, you must have an Ace and a card worth 10.</dd>
+</dl>
+
+<h3>Miscellaneous Functions</h3>
+<p>
+At some point, you have to turn over the face-down cards that went to the dealer. The <code>reveal</code> function takes a hand and returns a new hand with all the cards face up:
+</p>
+
+<div><pre>(defn reveal
+  [hand]
+  (vec (map (fn [card] [(first card) :up]) hand)))</pre></div>
+
+<p>
+And you have to be able to take a hand and put it on the discard pile. The <code>discard</code> function takes a vector consisting of the hand and the current discard pile as it input. It returns a similar vector with an empty hand and the new value of the discard pile. (This will allow the calls to be chained if that is ever desired.) Note that just the card number goes into the discard pile, the <code>:up</code> or <code>:down</code> is irrelevant.
+</p>
+
+<div><pre>(defn discard
+  [[hand pile]]
+  [ [] (vec (reduce (fn [acc x] (conj acc (first x))) pile hand)]))</pre></div>
+
+<p>
+After the first two cards are dealt, we need to know if there is an immediate win or not:
+</p>
+
+<ul>
+    <li>Input: Player hand and dealer hand</li>
+    <li>Output:
+        <ul>
+            <li><code>:none</code> (nobody wins instantly)</li>
+            <li><code>:tie</code> (both dealer and player have blackjack)</li>
+            <li><code>:player</code> (player has blackjack)</li>
+            <li><code>:dealer</code> (dealer has blackjack)</li>
+        </ul></li>
+</ul>
+
+<p>Here is the code:</p>
+<div><pre>(defn immediate-win
+  [player-hand dealer-hand]
+  (let [[_ player-status] (evaluate-hand player-hand)
+        [_ dealer-status] (evaluate-hand dealer-hand)]
+    (cond
+      (and (= player-status :blackjack) (= dealer-status :blackjack)) :tie
+      (= player-status :blackjack) :player
+      (= dealer-status :blackjack) :dealer
+      :else :none)))</pre></div>
+
+<p>
+And you want to know if there&rsquo;s a winner at any other time, with inputs and outputs the same as for <code>immediate-win</code>:
+</p>
+
+<div><pre>(defn game-status
+  "Given player hand and dealer hand, return:
+  :none (nobody wins yet)
+  :player (player wins)
+  :dealer (dealer wins)
+  :tie"
+  [player-hand dealer-hand]
+  (let [[player-total player-status] (evaluate-hand player-hand)
+    [dealer-total dealer-status] (evaluate-hand dealer-hand)]
+    (cond
+      (and (= player-status :ok)(= dealer-status :ok)) :none
+      (or (< dealer-total player-total) (= dealer-status :bust)) :player
+      (or (< player-total dealer-total) (= player-status :bust)) :dealer
+      (= player-total dealer-total :tie))))</pre></div>
+
+<p>
+That takes care of the game logic.
+<h2>User Interface</h2>
+<p>
+</p>
+
+</body>
+</html>
