@@ -163,9 +163,8 @@
 (defn recharge-money [event]
   (swap! game assoc :current-bet 10 :player-money 1000))
 
-(defn card-image [whose n]
-  (let [hand (@game whose)
-        [card pos :as wholecard] (if (< n (count hand))
+(defn card-image [hand n]
+  (let [[card pos :as wholecard] (if (< n (count hand))
                                    (nth hand n)
                                    [-1 :up])
         filename (if (< card 0) "outline" (if (= pos :up) card "blue_grid_back"))]
@@ -177,41 +176,43 @@
                    :height "133px"
                    :width "98px"}}]))
 
-(defn player-cards [whose-hand]
+(defn show-cards [hand]
   (into [] (concat [:div {:class "cards"}]
-                   (map (fn [x] (card-image whose-hand x)) (range 0 (count (@game whose-hand)))))))
+                   (map (fn [x] (card-image hand x)) (range 0 (count hand))))))
 
 (defn tableau []
+  (let [{:keys [dealer-hand player-hand playing dealer-feedback player-feedback
+                player-money current-bet]} @game]
   [:div
-   [:h2 "Dealer’s Cards " [:span {:class "feedback"} (:dealer-feedback @game)]]
-   [player-cards :dealer-hand]
+   [:h2 "Dealer’s Cards " [:span {:class "feedback"} dealer-feedback]]
+   [show-cards dealer-hand]
    [:hr]
-   [:h2 "Your Cards " [:span {:class "feedback"} (:player-feedback @game)]]
-   [player-cards :player-hand]
+   [:h2 "Your Cards " [:span {:class "feedback"} player-feedback]]
+   [show-cards player-hand]
    [:p
     [:input {:type "button"
              :value "Start Game"
-             :style {:display (if (:playing @game) "none" "inline")}
+             :style {:display (if playing "none" "inline")}
              :on-click start-game}]
     [:input {:type "button"
              :value "Hit"
              :on-click hit-me
-             :style {:display (if (:playing @game) "inline" "none")}}]
+             :style {:display (if playing "inline" "none")}}]
     [:input {:type "button"
              :value "Stand"
              :on-click stand
-             :style {:display (if (:playing @game) "inline" "none")}}]
+             :style {:display (if playing "inline" "none")}}]
      " Your bet: $"
      [:input {:type "text"
               :size "5"
               :on-change change-bet
-              :value (:current-bet @game)}]
-     " Current money: $" (:player-money @game)
+              :value current-bet}]
+     " Current money: $" player-money
     "\u00a0"
     [:input {:type "button"
              :value "Recharge money"
              :on-click recharge-money
-             :style {:display (if (= (:player-money @game) 0) "inline" "none")}}]]])
+             :style {:display (if (= player-money 0) "inline" "none")}}]]]))
 
 (swap! game assoc :deck (into [] (shuffle (range 0 52))))
 (reagent/render-component [tableau] (.getElementById js/document "tableau"))
